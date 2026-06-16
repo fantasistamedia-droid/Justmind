@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Just Mind - Tournament OS (Cloud Sync)</title>
+    <title>Just Mind - Tournament OS (Cloud Sync & Image Optimized)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome 6 -->
+    <!-- FontAwesome 6 untuk Ikon Bebas Crash -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,6 +33,7 @@
             background: linear-gradient(135deg, #ef4444, #991b1b); 
             box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.25); 
         }
+        /* Animasi Pop Up */
         .animate-pop {
             animation: popCheck 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
@@ -58,6 +59,47 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="text/babel">
+        // Fungsi cerdas untuk mengecilkan dimensi dan kompresi gambar JPEG di frontend
+        const compressAndResizeImage = (file, maxWidth, maxHeight, quality = 0.65) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        // Pertahankan rasio aspek gambar saat melakukan resizing
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height = Math.round((height * maxWidth) / width);
+                                width = maxWidth;
+                            }
+                        } else {
+                            if (height > maxHeight) {
+                                width = Math.round((width * maxHeight) / height);
+                                height = maxHeight;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Ekspor sebagai JPEG berukuran mikro untuk efisiensi transfer data Google Sheets
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+                        resolve(compressedBase64);
+                    };
+                    img.onerror = (err) => reject(err);
+                };
+                reader.onerror = (err) => reject(err);
+            });
+        };
+
         const Icon = ({ name, className = "", size }) => {
             const style = size ? { fontSize: `${size}px` } : {};
             return <i className={`${name} ${className}`} style={style}></i>;
@@ -67,6 +109,7 @@
             const [activeTab, setActiveTab] = React.useState('dashboard');
             const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
+            // Sesi Pengguna saat ini (Login State)
             const [currentUser, setCurrentUser] = React.useState(() => {
                 try {
                     const saved = localStorage.getItem('jm_current_user');
@@ -74,6 +117,7 @@
                 } catch(e) { return null; }
             });
 
+            // Basis data Admin tambahan yang dikelola oleh Owner
             const [admins, setAdmins] = React.useState(() => {
                 try {
                     const saved = localStorage.getItem('jm_admins');
@@ -81,6 +125,7 @@
                 } catch(e) { return []; }
             });
 
+            // Database internal dengan fitur auto-load dari localStorage
             const [leagues, setLeagues] = React.useState(() => {
                 try {
                     const saved = localStorage.getItem('jm_leagues');
@@ -133,10 +178,11 @@
             const [syncStatus, setSyncStatus] = React.useState('local'); // 'local' | 'connecting' | 'synced' | 'error'
             const [isSyncing, setIsSyncing] = React.useState(false);
 
-            // Modals
+            // State untuk modal kustom
             const [confirmModal, setConfirmModal] = React.useState({ isOpen: false, title: '', message: '', onConfirm: null });
             const [alertModal, setAlertModal] = React.useState({ isOpen: false, title: '', message: '', type: 'info' });
 
+            // Sinkronisasi data ke LocalStorage secara otomatis saat terjadi perubahan
             React.useEffect(() => {
                 try { localStorage.setItem('jm_current_user', JSON.stringify(currentUser)); } catch(e){}
             }, [currentUser]);
@@ -193,7 +239,7 @@
                 } catch (error) {
                     console.error("Gagal sinkronisasi awan:", error);
                     setSyncStatus('error');
-                    if (!quiet) showAlert('Koneksi Gagal', 'Tidak dapat mengunduh data dari Google Sheet. Menggunakan basis data lokal.', 'error');
+                    if (!quiet) showAlert('Koneksi Gagal', 'Gagal memuat data awan. Kembali menggunakan basis data lokal.', 'error');
                 } finally {
                     setIsSyncing(false);
                 }
@@ -214,24 +260,23 @@
                 };
 
                 try {
-                    const response = await fetch(gasUrl, {
+                    await fetch(gasUrl, {
                         method: 'POST',
-                        mode: 'no-cors', // Diperlukan untuk Google Apps Script POST redirect bypass
+                        mode: 'no-cors',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    
                     setSyncStatus('synced');
                 } catch (error) {
                     console.error("Gagal mengunggah data awan:", error);
                     setSyncStatus('error');
-                    showAlert('Gagal Menyimpan', 'Gagal memperbarui data ke Google Sheet. Perubahan disimpan lokal.', 'error');
+                    showAlert('Gagal Menyimpan', 'Perubahan tersimpan secara lokal namun gagal diperbarui ke awan.', 'error');
                 } finally {
                     setIsSyncing(false);
                 }
             }, [gasUrl, leagues, admins, teams, players, matches]);
 
-            // Auto-pull on load
+            // Auto-pull pada muat awal aplikasi
             React.useEffect(() => {
                 if (gasUrl) {
                     pullFromCloud(true);
@@ -436,7 +481,7 @@
                                 {activeTab === 'auth' && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
                             </button>
                         </nav>
-                        <div className="p-4 border-t border-white/5 text-[9px] text-center text-red-200/20 font-bold uppercase tracking-widest">v5.5 - Vercel Ready</div>
+                        <div className="p-4 border-t border-white/5 text-[9px] text-center text-red-200/20 font-bold uppercase tracking-widest">v6.5 - Google Sheet & Image Optimized</div>
                     </aside>
 
                     {isSidebarOpen && (
@@ -463,13 +508,13 @@
                                 </div>
                             </div>
                             
-                            {/* Status Sync Awan di Header */}
+                            {/* Status Sinkronisasi Awan di Header */}
                             <div className="flex items-center gap-3">
                                 {gasUrl && (
                                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-full text-[10px] font-bold">
                                         {syncStatus === 'synced' && (
                                             <>
-                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                                                 <span className="text-emerald-700 font-extrabold uppercase tracking-wide">Terhubung Sheet</span>
                                             </>
                                         )}
@@ -739,15 +784,24 @@
             const [pts, setPts] = React.useState({ win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 });
             const [logo, setLogo] = React.useState(null);
             const [editId, setEditId] = React.useState(null);
+            const [isUploading, setIsUploading] = React.useState(false);
 
             const fileRef = React.useRef(null);
 
-            const handleLogoUpload = (e) => {
+            // Kompresi logo liga otomatis saat diunggah
+            const handleLogoUpload = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setLogo(reader.result);
-                    reader.readAsDataURL(file);
+                    setIsUploading(true);
+                    try {
+                        // Maksimal lebar/tinggi 128px, kualitas JPEG 70%
+                        const compressed = await compressAndResizeImage(file, 128, 128, 0.7);
+                        setLogo(compressed);
+                    } catch (error) {
+                        console.error(error);
+                    } finally {
+                        setIsUploading(false);
+                    }
                 }
             };
 
@@ -801,10 +855,19 @@
                         
                         <div className="flex items-center gap-4">
                             <div onClick={() => fileRef.current.click()} className="w-16 h-16 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative group">
-                                {logo ? <img src={logo} className="w-full h-full object-cover" alt="League Logo" /> : <Icon name="fa-solid fa-camera" className="text-slate-300" size={18} />}
+                                {isUploading ? (
+                                    <Icon name="fa-solid fa-spinner animate-spin text-red-500" />
+                                ) : logo ? (
+                                    <img src={logo} className="w-full h-full object-cover" alt="League Logo" />
+                                ) : (
+                                    <Icon name="fa-solid fa-camera" className="text-slate-300" size={18} />
+                                )}
                                 <input type="file" ref={fileRef} hidden onChange={handleLogoUpload} accept="image/*" />
                             </div>
-                            <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama Turnamen..." className="flex-1 bg-slate-50 rounded-xl px-4 py-3 font-bold border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none text-xs" />
+                            <div className="flex-1">
+                                <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama Turnamen..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none text-xs" />
+                                <span className="text-[8px] text-slate-400 font-bold uppercase mt-1 block">Logo otomatis dikompresi agar hemat database</span>
+                            </div>
                         </div>
 
                         <div className="space-y-2">
@@ -899,6 +962,8 @@
 
             const [editTeamId, setEditTeamId] = React.useState(null);
             const [editPlayerId, setEditPlayerId] = React.useState(null);
+            const [isTeamLogoUploading, setIsTeamLogoUploading] = React.useState(false);
+            const [isPlayerPhotoUploading, setIsPlayerPhotoUploading] = React.useState(false);
 
             const teamFileRef = React.useRef(null);
             const playerFileRef = React.useRef(null);
@@ -909,21 +974,37 @@
                 }
             }, [currentLeague]);
 
-            const handleTeamLogoUpload = (e) => {
+            // Kompresi logo tim otomatis
+            const handleTeamLogoUpload = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setTLogo(reader.result);
-                    reader.readAsDataURL(file);
+                    setIsTeamLogoUploading(true);
+                    try {
+                        // Maksimal lebar/tinggi 96px, kualitas JPEG 65%
+                        const compressed = await compressAndResizeImage(file, 96, 96, 0.65);
+                        setTLogo(compressed);
+                    } catch (error) {
+                        console.error(error);
+                    } finally {
+                        setIsTeamLogoUploading(false);
+                    }
                 }
             };
 
-            const handlePlayerPhotoUpload = (e) => {
+            // Kompresi foto pemain otomatis
+            const handlePlayerPhotoUpload = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setPPhoto(reader.result);
-                    reader.readAsDataURL(file);
+                    setIsPlayerPhotoUploading(true);
+                    try {
+                        // Maksimal lebar/tinggi 120px, kualitas JPEG 65%
+                        const compressed = await compressAndResizeImage(file, 120, 120, 0.65);
+                        setPPhoto(compressed);
+                    } catch (error) {
+                        console.error(error);
+                    } finally {
+                        setIsPlayerPhotoUploading(false);
+                    }
                 }
             };
 
@@ -988,10 +1069,19 @@
                             <h3 className="text-xs font-black text-red-600 uppercase tracking-widest">{editTeamId ? 'Ubah Informasi Tim' : 'Registrasi Tim Peserta'}</h3>
                             <div className="flex items-center gap-4">
                                 <div onClick={() => teamFileRef.current.click()} className="w-14 h-14 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative group">
-                                    {tLogo ? <img src={tLogo} className="w-full h-full object-cover" alt="Team Logo" /> : <Icon name="fa-solid fa-camera" className="text-slate-300" size={16} />}
+                                    {isTeamLogoUploading ? (
+                                        <Icon name="fa-solid fa-spinner animate-spin text-red-500" />
+                                    ) : tLogo ? (
+                                        <img src={tLogo} className="w-full h-full object-cover" alt="Team Logo" />
+                                    ) : (
+                                        <Icon name="fa-solid fa-camera" className="text-slate-300" size={16} />
+                                    )}
                                     <input type="file" ref={teamFileRef} hidden onChange={handleTeamLogoUpload} accept="image/*" />
                                 </div>
-                                <input value={tName} onChange={e => setTName(e.target.value)} placeholder="Nama Klub..." className="flex-1 bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                                <div className="flex-1">
+                                    <input value={tName} onChange={e => setTName(e.target.value)} placeholder="Nama Klub..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                                    <span className="text-[8px] text-slate-400 font-bold uppercase mt-1 block">Foto dikompresi agar hemat database</span>
+                                </div>
                             </div>
 
                             {currentLeague?.type === 'league' && (
@@ -1038,11 +1128,18 @@
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-4">
                                         <div onClick={() => playerFileRef.current.click()} className="w-14 h-14 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative group">
-                                            {pPhoto ? <img src={pPhoto} className="w-full h-full object-cover" alt="Player" /> : <Icon name="fa-solid fa-user" className="text-slate-300" size={16} />}
+                                            {isPlayerPhotoUploading ? (
+                                                <Icon name="fa-solid fa-spinner animate-spin text-red-500" />
+                                            ) : pPhoto ? (
+                                                <img src={pPhoto} className="w-full h-full object-cover" alt="Player" />
+                                            ) : (
+                                                <Icon name="fa-solid fa-user" className="text-slate-300" size={16} />
+                                            )}
                                             <input type="file" ref={playerFileRef} hidden onChange={handlePlayerPhotoUpload} accept="image/*" />
                                         </div>
                                         <div className="flex-1 space-y-2">
                                             <input value={pName} onChange={e => setPName(e.target.value)} placeholder="Nama Pemain..." className="w-full bg-slate-50 rounded-xl px-3 py-2.5 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                                            <span className="text-[8px] text-slate-400 font-bold uppercase block">Foto dioptimasi otomatis</span>
                                         </div>
                                     </div>
 
@@ -1646,8 +1743,8 @@
                             <div className="text-center">
                                 <h3 className="font-black text-lg uppercase text-slate-800">Masuk Konsol Admin</h3>
                             </div>
-                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Alamat Email..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none" />
-                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none" />
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Alamat Email..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
                             <button type="submit" className="w-full py-3.5 bg-[#4c0519] text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg">Verifikasi & Masuk</button>
                         </form>
                     )}
