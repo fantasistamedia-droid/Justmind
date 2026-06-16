@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Just Mind - Tournament OS (Cloud Sync)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #fcfcfc; 
+        }
+        .custom-scrollbar::-webkit-scrollbar { 
+            width: 5px; 
+            height: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track { 
+            background: transparent; 
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb { 
+            background: #4c0519; 
+            border-radius: 10px; 
+        }
+        .active-nav { 
+            background: linear-gradient(135deg, #ef4444, #991b1b); 
+            box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.25); 
+        }
+        .animate-pop {
+            animation: popCheck 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes popCheck {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .sync-pulse {
+            animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .4; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased">
+    <div id="root"></div>
+
+    <!-- React 18 & Babel CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const Icon = ({ name, className = "", size }) => {
+            const style = size ? { fontSize: `${size}px` } : {};
+            return <i className={`${name} ${className}`} style={style}></i>;
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = React.useState('dashboard');
+            const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+
+            const [currentUser, setCurrentUser] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_current_user');
+                    return saved ? JSON.parse(saved) : null;
+                } catch(e) { return null; }
+            });
+
+            const [admins, setAdmins] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_admins');
+                    return saved ? JSON.parse(saved) : [];
+                } catch(e) { return []; }
+            });
+
+            const [leagues, setLeagues] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_leagues');
+                    return saved ? JSON.parse(saved) : [
+                        { 
+                            id: 'l1', 
+                            name: 'Liga Utama Just Mind', 
+                            type: 'league', 
+                            groups: ['Grup A', 'Grup B'], 
+                            points: { win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 },
+                            logo: null
+                        }
+                    ];
+                } catch(e) {
+                    return [{ id: 'l1', name: 'Liga Utama Just Mind', type: 'league', groups: ['Grup A', 'Grup B'], points: { win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 }, logo: null }];
+                }
+            });
+
+            const [currentLeagueId, setCurrentLeagueId] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_current_league_id');
+                    return saved || 'l1';
+                } catch(e) { return 'l1'; }
+            });
+
+            const [teams, setTeams] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_teams');
+                    return saved ? JSON.parse(saved) : [];
+                } catch(e) { return []; }
+            });
+
+            const [players, setPlayers] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_players');
+                    return saved ? JSON.parse(saved) : [];
+                } catch(e) { return []; }
+            });
+
+            const [matches, setMatches] = React.useState(() => {
+                try {
+                    const saved = localStorage.getItem('jm_matches');
+                    return saved ? JSON.parse(saved) : [];
+                } catch(e) { return []; }
+            });
+
+            const [gasUrl, setGasUrl] = React.useState(() => {
+                return localStorage.getItem('jm_gas_url') || '';
+            });
+            const [syncStatus, setSyncStatus] = React.useState('local'); // 'local' | 'connecting' | 'synced' | 'error'
+            const [isSyncing, setIsSyncing] = React.useState(false);
+
+            // Modals
+            const [confirmModal, setConfirmModal] = React.useState({ isOpen: false, title: '', message: '', onConfirm: null });
+            const [alertModal, setAlertModal] = React.useState({ isOpen: false, title: '', message: '', type: 'info' });
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_current_user', JSON.stringify(currentUser)); } catch(e){}
+            }, [currentUser]);
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_admins', JSON.stringify(admins)); } catch(e){}
+            }, [admins]);
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_leagues', JSON.stringify(leagues)); } catch(e){}
+            }, [leagues]);
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_current_league_id', currentLeagueId); } catch(e){}
+            }, [currentLeagueId]);
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_teams', JSON.stringify(teams)); } catch(e){}
+            }, [teams]);
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_players', JSON.stringify(players)); } catch(e){}
+            }, [players]);
+
+            React.useEffect(() => {
+                try { localStorage.setItem('jm_matches', JSON.stringify(matches)); } catch(e){}
+            }, [matches]);
+
+            React.useEffect(() => {
+                localStorage.setItem('jm_gas_url', gasUrl);
+            }, [gasUrl]);
+
+            const pullFromCloud = React.useCallback(async (quiet = false) => {
+                if (!gasUrl) {
+                    setSyncStatus('local');
+                    return;
+                }
+                if (!quiet) setIsSyncing(true);
+                setSyncStatus('connecting');
+
+                try {
+                    const response = await fetch(gasUrl, { method: 'GET', redirect: 'follow' });
+                    if (!response.ok) throw new Error("HTTP error " + response.status);
+                    const cloudData = await response.json();
+
+                    if (cloudData) {
+                        if (cloudData.leagues) setLeagues(cloudData.leagues);
+                        if (cloudData.admins) setAdmins(cloudData.admins);
+                        if (cloudData.teams) setTeams(cloudData.teams);
+                        if (cloudData.players) setPlayers(cloudData.players);
+                        if (cloudData.matches) setMatches(cloudData.matches);
+                        setSyncStatus('synced');
+                    }
+                } catch (error) {
+                    console.error("Gagal sinkronisasi awan:", error);
+                    setSyncStatus('error');
+                    if (!quiet) showAlert('Koneksi Gagal', 'Tidak dapat mengunduh data dari Google Sheet. Menggunakan basis data lokal.', 'error');
+                } finally {
+                    setIsSyncing(false);
+                }
+            }, [gasUrl]);
+
+            const pushToCloud = React.useCallback(async (customState = null) => {
+                if (!gasUrl) return;
+                setIsSyncing(true);
+                setSyncStatus('connecting');
+
+                const payload = {
+                    action: 'sync',
+                    leagues: customState?.leagues || leagues,
+                    admins: customState?.admins || admins,
+                    teams: customState?.teams || teams,
+                    players: customState?.players || players,
+                    matches: customState?.matches || matches
+                };
+
+                try {
+                    const response = await fetch(gasUrl, {
+                        method: 'POST',
+                        mode: 'no-cors', // Diperlukan untuk Google Apps Script POST redirect bypass
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    setSyncStatus('synced');
+                } catch (error) {
+                    console.error("Gagal mengunggah data awan:", error);
+                    setSyncStatus('error');
+                    showAlert('Gagal Menyimpan', 'Gagal memperbarui data ke Google Sheet. Perubahan disimpan lokal.', 'error');
+                } finally {
+                    setIsSyncing(false);
+                }
+            }, [gasUrl, leagues, admins, teams, players, matches]);
+
+            // Auto-pull on load
+            React.useEffect(() => {
+                if (gasUrl) {
+                    pullFromCloud(true);
+                }
+            }, [gasUrl, pullFromCloud]);
+
+            const currentLeague = React.useMemo(() => {
+                return leagues.find(l => l.id === currentLeagueId) || leagues[0];
+            }, [leagues, currentLeagueId]);
+
+            const filteredTeams = React.useMemo(() => {
+                return teams.filter(t => t.leagueId === currentLeagueId);
+            }, [teams, currentLeagueId]);
+
+            const filteredMatches = React.useMemo(() => {
+                return matches.filter(m => m.leagueId === currentLeagueId);
+            }, [matches, currentLeagueId]);
+
+            const filteredPlayers = React.useMemo(() => {
+                return players.filter(p => filteredTeams.some(t => t.id === p.teamId));
+            }, [players, filteredTeams]);
+
+            const standingsByGroup = React.useMemo(() => {
+                if (!currentLeague || currentLeague.type !== 'league') return {};
+                const pRules = currentLeague.points || { win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 };
+                const groups = currentLeague.groups || ['Grup A'];
+                let grouped = {};
+
+                groups.forEach(g => {
+                    grouped[g] = filteredTeams.filter(t => t.groupName === g).map(t => ({
+                        ...t, played: 0, win: 0, draw: 0, loss: 0, gf: 0, ga: 0, pts: 0, winPk: 0, lossPk: 0
+                    }));
+                });
+
+                filteredMatches.filter(m => m.isFinished).forEach(m => {
+                    const home = Object.values(grouped).flat().find(t => t.id === m.homeId);
+                    const away = Object.values(grouped).flat().find(t => t.id === m.awayId);
+                    if (home && away) {
+                        const sh = Number(m.scoreHome) || 0;
+                        const sa = Number(m.scoreAway) || 0;
+                        home.played++; away.played++;
+                        home.gf += sh; home.ga += sa;
+                        away.gf += sa; away.ga += sh;
+
+                        if (sh > sa) {
+                            home.win++;
+                            home.pts += Number(pRules.win);
+                            away.loss++;
+                            away.pts += Number(pRules.loss);
+                        } else if (sa > sh) {
+                            away.win++;
+                            away.pts += Number(pRules.win);
+                            home.loss++;
+                            home.pts += Number(pRules.loss);
+                        } else {
+                            if (m.isPk) {
+                                const pkh = Number(m.pkHome) || 0;
+                                const pka = Number(m.pkAway) || 0;
+                                if (pkh > pka) {
+                                    home.winPk++;
+                                    home.pts += Number(pRules.winPk);
+                                    away.lossPk++;
+                                    away.pts += Number(pRules.lossPk);
+                                } else {
+                                    away.winPk++;
+                                    away.pts += Number(pRules.winPk);
+                                    home.lossPk++;
+                                    home.pts += Number(pRules.lossPk);
+                                }
+                            } else {
+                                home.draw++;
+                                away.draw++;
+                                home.pts += Number(pRules.draw);
+                                away.pts += Number(pRules.draw);
+                            }
+                        }
+                    }
+                });
+
+                Object.keys(grouped).forEach(k => {
+                    grouped[k].sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf);
+                });
+                return grouped;
+            }, [filteredMatches, filteredTeams, currentLeague]);
+
+            const topScorersList = React.useMemo(() => {
+                let counts = {};
+                filteredMatches.forEach(m => {
+                    if (m.scorers) {
+                        m.scorers.forEach(s => {
+                            counts[s.playerId] = (counts[s.playerId] || 0) + 1;
+                        });
+                    }
+                });
+                return Object.entries(counts)
+                    .map(([pid, goals]) => {
+                        const pInfo = players.find(p => p.id === pid);
+                        if (!pInfo) return null;
+                        const tInfo = teams.find(t => t.id === pInfo.teamId);
+                        return { ...pInfo, goals, teamName: tInfo ? tInfo.name : 'Klub tidak diketahui' };
+                    })
+                    .filter(p => p !== null)
+                    .sort((a, b) => b.goals - a.goals)
+                    .slice(0, 5);
+            }, [filteredMatches, players, teams]);
+
+            const showConfirm = (title, message, onConfirm) => {
+                setConfirmModal({ isOpen: true, title, message, onConfirm });
+            };
+
+            const showAlert = (title, message, type = 'info') => {
+                setAlertModal({ isOpen: true, title, message, type });
+            };
+
+            const hasWriteAuthority = React.useMemo(() => {
+                return currentUser !== null && (currentUser.role === 'admin' || currentUser.role === 'owner');
+            }, [currentUser]);
+
+            return (
+                <div className="min-h-screen flex text-slate-800 bg-[#fcfcfc] overflow-hidden">
+                    {/* SIDEBAR */}
+                    <aside className={`fixed top-0 left-0 h-full bg-[#4c0519] text-white z-50 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-72' : 'w-0 -left-72'} lg:w-72 lg:left-0 shadow-2xl overflow-hidden flex flex-col`}>
+                        <div className="p-6 border-b border-white/5 text-center">
+                            <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-3">
+                                <Icon name="fa-solid fa-trophy" className="text-[#4c0519] text-2xl" />
+                            </div>
+                            <span className="font-extrabold text-2xl tracking-tighter block uppercase">JUST<span className="text-red-500">MIND</span></span>
+                            <span className="text-[9px] text-red-200/40 font-bold uppercase tracking-[0.2em]">Tournament OS</span>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
+                            {[
+                                { id: 'dashboard', label: 'Dashboard', icon: 'fa-solid fa-chart-line' },
+                            ].map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => { setActiveTab(item.id); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
+                                    className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all group relative ${activeTab === item.id ? 'active-nav' : 'hover:bg-white/5 text-red-200/60 hover:text-white'}`}
+                                >
+                                    <Icon name={item.icon} className={activeTab === item.id ? 'text-white' : 'text-red-300/30'} size={16} />
+                                    <span className="font-bold text-sm">{item.label}</span>
+                                    {activeTab === item.id && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
+                                </button>
+                            ))}
+
+                            {hasWriteAuthority && [
+                                { id: 'leagues', label: 'Manajemen Liga', icon: 'fa-solid fa-layer-group' },
+                                { id: 'admin', label: 'Tim & Skuad', icon: 'fa-solid fa-shield-halved' },
+                            ].map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => { setActiveTab(item.id); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
+                                    className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all group relative ${activeTab === item.id ? 'active-nav' : 'hover:bg-white/5 text-red-200/60 hover:text-white'}`}
+                                >
+                                    <Icon name={item.icon} className={activeTab === item.id ? 'text-white' : 'text-red-300/30'} size={16} />
+                                    <span className="font-bold text-sm">{item.label}</span>
+                                    {activeTab === item.id && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
+                                </button>
+                            ))}
+
+                            {[
+                                { id: 'jadwal', label: 'Jadwal & Hasil', icon: 'fa-solid fa-calendar-days' },
+                                { id: 'klasemen', label: 'Peringkat / Bracket', icon: 'fa-solid fa-list-ol' },
+                            ].map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => { setActiveTab(item.id); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
+                                    className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all group relative ${activeTab === item.id ? 'active-nav' : 'hover:bg-white/5 text-red-200/60 hover:text-white'}`}
+                                >
+                                    <Icon name={item.icon} className={activeTab === item.id ? 'text-white' : 'text-red-300/30'} size={16} />
+                                    <span className="font-bold text-sm">{item.label}</span>
+                                    {activeTab === item.id && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
+                                </button>
+                            ))}
+
+                            {/* Menu Pengaturan Integrasi Google Sheet */}
+                            <button
+                                onClick={() => { setActiveTab('gs_sync'); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
+                                className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all group relative ${activeTab === 'gs_sync' ? 'active-nav' : 'hover:bg-white/5 text-red-200/60 hover:text-white'}`}
+                            >
+                                <Icon name="fa-solid fa-cloud-arrow-up" className={activeTab === 'gs_sync' ? 'text-white' : 'text-red-300/30'} size={16} />
+                                <span className="font-bold text-sm">Google Sheets</span>
+                                {activeTab === 'gs_sync' && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
+                            </button>
+
+                            {currentUser?.role === 'owner' && (
+                                <button
+                                    onClick={() => { setActiveTab('manage_admins'); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
+                                    className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all group relative ${activeTab === 'manage_admins' ? 'active-nav' : 'hover:bg-white/5 text-red-200/60 hover:text-white'}`}
+                                >
+                                    <Icon name="fa-solid fa-users-gear" className={activeTab === 'manage_admins' ? 'text-white' : 'text-red-300/30'} size={16} />
+                                    <span className="font-bold text-sm">Kelola Admin</span>
+                                    {activeTab === 'manage_admins' && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
+                                </button>
+                            )}
+
+                            <button
+                                onClick={() => { setActiveTab('auth'); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
+                                className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all group relative ${activeTab === 'auth' ? 'active-nav' : 'hover:bg-white/5 text-red-200/60 hover:text-white'}`}
+                            >
+                                <Icon name="fa-solid fa-lock" className={activeTab === 'auth' ? 'text-white' : 'text-red-300/30'} size={16} />
+                                <span className="font-bold text-sm">{currentUser ? 'Pengaturan Akun' : 'Masuk (Login)'}</span>
+                                {activeTab === 'auth' && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full" />}
+                            </button>
+                        </nav>
+                        <div className="p-4 border-t border-white/5 text-[9px] text-center text-red-200/20 font-bold uppercase tracking-widest">v5.5 - Vercel Ready</div>
+                    </aside>
+
+                    {isSidebarOpen && (
+                        <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+                    )}
+
+                    {/* MAIN CONTENT AREA */}
+                    <div className="flex-1 flex flex-col h-screen overflow-hidden lg:ml-72">
+                        {/* HEADER */}
+                        <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-6 sticky top-0 z-30">
+                            <div className="flex items-center gap-4">
+                                <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-400 hover:bg-slate-50 rounded-xl">
+                                    <Icon name="fa-solid fa-bars" size={18} />
+                                </button>
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] font-black text-red-600 uppercase tracking-widest leading-none">Liga Aktif</span>
+                                    <select 
+                                        value={currentLeagueId}
+                                        onChange={(e) => setCurrentLeagueId(e.target.value)}
+                                        className="bg-transparent border-none p-0 font-bold text-slate-800 focus:ring-0 cursor-pointer text-xs uppercase tracking-wide mt-1 outline-none"
+                                    >
+                                        {leagues.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            {/* Status Sync Awan di Header */}
+                            <div className="flex items-center gap-3">
+                                {gasUrl && (
+                                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-full text-[10px] font-bold">
+                                        {syncStatus === 'synced' && (
+                                            <>
+                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                                                <span className="text-emerald-700 font-extrabold uppercase tracking-wide">Terhubung Sheet</span>
+                                            </>
+                                        )}
+                                        {syncStatus === 'connecting' && (
+                                            <>
+                                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block sync-pulse"></span>
+                                                <span className="text-amber-700 font-extrabold uppercase tracking-wide">Sinkronisasi...</span>
+                                            </>
+                                        )}
+                                        {syncStatus === 'error' && (
+                                            <>
+                                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+                                                <span className="text-rose-700 font-extrabold uppercase tracking-wide">Mode Offline</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                
+                                {currentUser ? (
+                                    <div className="flex items-center gap-2">
+                                        <div className="hidden md:flex flex-col text-right">
+                                            <span className="text-[10px] font-black uppercase text-[#4c0519] leading-none">{currentUser.name}</span>
+                                            <span className="text-[8px] text-slate-400 font-semibold uppercase mt-0.5">{currentUser.role === 'owner' ? 'Owner' : 'Admin'}</span>
+                                        </div>
+                                        <div className="w-9 h-9 rounded-xl bg-[#4c0519] text-white flex items-center justify-center shadow-md">
+                                            <Icon name={currentUser.role === 'owner' ? 'fa-solid fa-crown' : 'fa-solid fa-user-shield'} size={14} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setActiveTab('auth')} className="text-[10px] font-extrabold uppercase tracking-widest bg-slate-100 hover:bg-slate-200 text-[#4c0519] px-4 py-2 rounded-xl transition-all">
+                                        <Icon name="fa-solid fa-right-to-bracket mr-1.5" /> Masuk Admin
+                                    </button>
+                                )}
+                            </div>
+                        </header>
+
+                        {/* CONTENT WRAPPER */}
+                        <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+                            <div className="max-w-6xl mx-auto space-y-6">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                    <h2 className="text-xl md:text-2xl font-extrabold uppercase tracking-tight text-slate-800">
+                                        {activeTab === 'admin' ? 'Klub & Skuad Pemain' : activeTab === 'jadwal' ? 'Jadwal & Match Recorder' : activeTab === 'manage_admins' ? 'Kelola Akun Admin' : activeTab === 'auth' ? 'Sesi Autentikasi' : activeTab === 'gs_sync' ? 'Integrasi Google Sheet' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                                    </h2>
+                                    <span className="bg-[#4c0519] text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                                        {currentLeague?.type === 'league' ? 'Format Liga' : 'Sistem Gugur'}
+                                    </span>
+                                </div>
+
+                                {activeTab === 'dashboard' && (
+                                    <DashboardView 
+                                        currentLeague={currentLeague}
+                                        filteredTeams={filteredTeams} 
+                                        filteredMatches={filteredMatches} 
+                                        standingsByGroup={standingsByGroup} 
+                                        topScorers={topScorersList} 
+                                    />
+                                )}
+                                {activeTab === 'leagues' && hasWriteAuthority && (
+                                    <LeagueManagement 
+                                        leagues={leagues} 
+                                        setLeagues={(newLeagues) => { setLeagues(newLeagues); pushToCloud({ leagues: newLeagues }); }} 
+                                        showConfirm={showConfirm}
+                                    />
+                                )}
+                                {activeTab === 'admin' && hasWriteAuthority && (
+                                    <AdminView 
+                                        teams={teams} 
+                                        setTeams={(newTeams) => { setTeams(newTeams); pushToCloud({ teams: newTeams }); }} 
+                                        players={players} 
+                                        setPlayers={(newPlayers) => { setPlayers(newPlayers); pushToCloud({ players: newPlayers }); }} 
+                                        leagueId={currentLeagueId} 
+                                        currentLeague={currentLeague} 
+                                        showConfirm={showConfirm}
+                                    />
+                                )}
+                                {activeTab === 'jadwal' && (
+                                    <JadwalView 
+                                        teams={filteredTeams} 
+                                        players={filteredPlayers}
+                                        matches={matches} 
+                                        setMatches={(newMatches) => { setMatches(newMatches); pushToCloud({ matches: newMatches }); }} 
+                                        leagueId={currentLeagueId} 
+                                        currentLeague={currentLeague} 
+                                        hasWriteAuthority={hasWriteAuthority}
+                                    />
+                                )}
+                                {activeTab === 'klasemen' && (
+                                    <StandingsOrBracketView 
+                                        currentLeague={currentLeague} 
+                                        standingsByGroup={standingsByGroup} 
+                                        matches={filteredMatches}
+                                        teams={filteredTeams}
+                                    />
+                                )}
+                                {activeTab === 'gs_sync' && (
+                                    <GoogleSheetSyncView 
+                                        gasUrl={gasUrl} 
+                                        setGasUrl={setGasUrl} 
+                                        pullFromCloud={pullFromCloud} 
+                                        pushToCloud={() => pushToCloud()} 
+                                        isSyncing={isSyncing} 
+                                        syncStatus={syncStatus} 
+                                    />
+                                )}
+                                {activeTab === 'manage_admins' && currentUser?.role === 'owner' && (
+                                    <ManageAdminsView 
+                                        admins={admins} 
+                                        setAdmins={(newAdmins) => { setAdmins(newAdmins); pushToCloud({ admins: newAdmins }); }} 
+                                        showConfirm={showConfirm}
+                                        showAlert={showAlert}
+                                    />
+                                )}
+                                {activeTab === 'auth' && (
+                                    <AuthView 
+                                        currentUser={currentUser} 
+                                        setCurrentUser={setCurrentUser} 
+                                        admins={admins}
+                                        showAlert={showAlert}
+                                        setActiveTab={setActiveTab}
+                                    />
+                                )}
+                            </div>
+                        </main>
+                    </div>
+
+                    {/* CONFIRM MODAL */}
+                    {confirmModal.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-pop">
+                            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-slate-100 text-center space-y-4">
+                                <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto animate-bounce">
+                                    <Icon name="fa-solid fa-triangle-exclamation" size={24} />
+                                </div>
+                                <h4 className="font-extrabold text-lg text-slate-800">{confirmModal.title}</h4>
+                                <p className="text-xs text-slate-500 font-semibold">{confirmModal.message}</p>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold uppercase transition-colors">Batal</button>
+                                    <button onClick={() => { confirmModal.onConfirm(); setConfirmModal({ ...confirmModal, isOpen: false }); }} className="flex-1 py-2.5 bg-[#4c0519] hover:bg-[#3b0413] text-white rounded-xl text-xs font-bold uppercase transition-colors">Ya, Hapus</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ALERT MODAL */}
+                    {alertModal.isOpen && (
+                        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-pop">
+                            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-slate-100 text-center space-y-4">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${alertModal.type === 'success' ? 'bg-emerald-50 text-emerald-600' : alertModal.type === 'error' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
+                                    <Icon name={alertModal.type === 'success' ? 'fa-solid fa-circle-check' : alertModal.type === 'error' ? 'fa-solid fa-circle-xmark' : 'fa-solid fa-circle-info'} size={24} />
+                                </div>
+                                <h4 className="font-extrabold text-lg text-slate-800">{alertModal.title}</h4>
+                                <p className="text-xs text-slate-500 font-semibold">{alertModal.message}</p>
+                                <button onClick={() => setAlertModal({ ...alertModal, isOpen: false })} className="w-full py-2.5 bg-[#4c0519] hover:bg-[#3b0413] text-white rounded-xl text-xs font-bold uppercase transition-colors">Tutup</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const DashboardView = ({ currentLeague, filteredTeams, filteredMatches, standingsByGroup, topScorers }) => {
+            const matchesFinishedCount = filteredMatches.filter(m => m.isFinished).length;
+            const totalGoals = filteredMatches.reduce((acc, m) => acc + (Number(m.scoreHome) || 0) + (Number(m.scoreAway) || 0), 0);
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 animate-pop">
+                            <div className="w-12 h-12 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600"><Icon name="fa-solid fa-shield-halved" size={20} /></div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Klub Peserta</p>
+                                <p className="text-2xl font-black">{filteredTeams.length}</p>
+                            </div>
+                        </div>
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 animate-pop">
+                            <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600"><Icon name="fa-solid fa-stopwatch" size={20} /></div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Laga Selesai</p>
+                                <p className="text-2xl font-black">{matchesFinishedCount}</p>
+                            </div>
+                        </div>
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 animate-pop">
+                            <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600"><Icon name="fa-solid fa-futbol" size={20} /></div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Gol</p>
+                                <p className="text-2xl font-black">{totalGoals}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 space-y-6">
+                            {currentLeague?.type === 'league' ? (
+                                Object.entries(standingsByGroup).map(([groupName, groupTeams]) => (
+                                    <div key={groupName} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 animate-pop">
+                                        <h3 className="text-xs font-black uppercase text-slate-400 mb-4 flex items-center gap-2">
+                                            <Icon name="fa-solid fa-list-ol text-[#4c0519]" /> Peringkat Sementara - {groupName}
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {groupTeams.slice(0, 3).map((team, idx) => (
+                                                <div key={team.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-xs font-black text-slate-400 w-4">{idx + 1}</span>
+                                                        {team.logo ? (
+                                                            <img src={team.logo} className="w-6 h-6 object-cover rounded-md" alt={team.name} />
+                                                        ) : (
+                                                            <div className="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-400">{team.name.charAt(0)}</div>
+                                                        )}
+                                                        <span className="font-bold text-xs uppercase">{team.name}</span>
+                                                    </div>
+                                                    <span className="font-black text-xs text-red-600">{team.pts} PTS</span>
+                                                </div>
+                                            ))}
+                                            {groupTeams.length === 0 && (
+                                                <p className="text-center text-xs text-slate-400 py-4 font-semibold uppercase">Belum ada tim terdaftar di grup ini</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 text-center py-10 animate-pop">
+                                    <Icon name="fa-solid fa-diagram-project" className="text-slate-200 mb-4" size={40} />
+                                    <h3 className="font-bold text-slate-600 uppercase text-xs">Sistem Turnamen Gugur Aktif</h3>
+                                    <p className="text-[10px] text-slate-400 uppercase mt-1">Silakan masuk ke tab Peringkat / Bracket untuk melihat bagan lengkap</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-[#4c0519] rounded-2xl p-6 text-white shadow-lg h-fit animate-pop">
+                            <h3 className="text-xs font-black uppercase tracking-wider mb-4 pb-2 border-b border-white/10 flex items-center gap-2">
+                                <Icon name="fa-solid fa-futbol text-red-400" /> TOP SCORER LIGA
+                            </h3>
+                            <div className="space-y-4">
+                                {topScorers.length > 0 ? (
+                                    topScorers.map((player) => (
+                                        <div key={player.id} className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-white/10 overflow-hidden flex items-center justify-center border border-white/10">
+                                                    {player.photo ? (
+                                                        <img src={player.photo} className="w-full h-full object-cover" alt={player.name} />
+                                                    ) : (
+                                                        <Icon name="fa-solid fa-user" className="opacity-30" />
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <p className="font-black text-xs uppercase leading-tight">{player.name}</p>
+                                                    <p className="text-[8px] text-red-300 uppercase font-semibold">{player.teamName} | #{player.no}</p>
+                                                </div>
+                                            </div>
+                                            <span className="text-xl font-black text-red-400">{player.goals}</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-center text-xs opacity-30 py-8 font-semibold uppercase">Belum ada catatan gol</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const LeagueManagement = ({ leagues, setLeagues, showConfirm }) => {
+            const [name, setName] = React.useState('');
+            const [type, setType] = React.useState('league');
+            const [groups, setGroups] = React.useState(['Grup A']);
+            const [gInput, setGInput] = React.useState('');
+            const [pts, setPts] = React.useState({ win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 });
+            const [logo, setLogo] = React.useState(null);
+            const [editId, setEditId] = React.useState(null);
+
+            const fileRef = React.useRef(null);
+
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setLogo(reader.result);
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const addGroup = () => {
+                if (gInput.trim() && !groups.includes(gInput.trim())) {
+                    setGroups([...groups, gInput.trim()]);
+                    setGInput('');
+                }
+            };
+
+            const removeGroup = (gName) => {
+                setGroups(groups.filter(g => g !== gName));
+            };
+
+            const saveLeague = () => {
+                if (!name.trim()) return;
+                const newLeague = {
+                    id: editId || Date.now().toString(),
+                    name, type, groups, points: pts, logo
+                };
+
+                if (editId) {
+                    setLeagues(leagues.map(l => l.id === editId ? newLeague : l));
+                    setEditId(null);
+                } else {
+                    setLeagues([...leagues, newLeague]);
+                }
+
+                setName('');
+                setType('league');
+                setGroups(['Grup A']);
+                setPts({ win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 });
+                setLogo(null);
+            };
+
+            const triggerEdit = (l) => {
+                setEditId(l.id);
+                setName(l.name);
+                setType(l.type);
+                setGroups(l.groups || ['Grup A']);
+                setPts(l.points || { win: 3, draw: 1, loss: 0, winPk: 2, lossPk: 1 });
+                setLogo(l.logo);
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5 animate-pop">
+                        <h3 className="text-xs font-black text-red-600 uppercase tracking-widest">
+                            {editId ? 'Perbarui Aturan Liga' : 'Buat Turnamen / Liga Baru'}
+                        </h3>
+                        
+                        <div className="flex items-center gap-4">
+                            <div onClick={() => fileRef.current.click()} className="w-16 h-16 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative group">
+                                {logo ? <img src={logo} className="w-full h-full object-cover" alt="League Logo" /> : <Icon name="fa-solid fa-camera" className="text-slate-300" size={18} />}
+                                <input type="file" ref={fileRef} hidden onChange={handleLogoUpload} accept="image/*" />
+                            </div>
+                            <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama Turnamen..." className="flex-1 bg-slate-50 rounded-xl px-4 py-3 font-bold border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none text-xs" />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-slate-400">Sistem Turnamen</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => setType('league')} className={`py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all ${type === 'league' ? 'bg-[#4c0519] text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}><Icon name="fa-solid fa-list-ol" /> Klasemen / Liga</button>
+                                <button onClick={() => setType('knockout')} className={`py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all ${type === 'knockout' ? 'bg-[#4c0519] text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}><Icon name="fa-solid fa-diagram-project" /> Sistem Gugur</button>
+                            </div>
+                        </div>
+
+                        {type === 'league' && (
+                            <div className="bg-slate-50 p-4 rounded-xl space-y-3">
+                                <label className="text-[10px] font-black uppercase text-[#4c0519] tracking-wider flex items-center gap-2"><Icon name="fa-solid fa-folder-tree" /> Pengaturan Grup</label>
+                                <div className="flex gap-2">
+                                    <input value={gInput} onChange={e => setGInput(e.target.value)} placeholder="Tambah Grup..." className="flex-1 bg-white rounded-lg px-3 py-2 text-xs outline-none ring-1 ring-slate-200" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGroup(); } }} />
+                                    <button onClick={addGroup} className="bg-[#4c0519] text-white px-4 rounded-lg text-xs font-bold hover:bg-[#3b0413]"><Icon name="fa-solid fa-plus" /></button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {groups.map(g => (
+                                        <span key={g} className="bg-white text-[9px] font-bold px-2.5 py-1 rounded-full border border-slate-200 flex items-center gap-2 animate-pop">
+                                            {g} <button onClick={() => removeGroup(g)}><Icon name="fa-solid fa-xmark" className="text-red-500 hover:text-red-700" /></button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-slate-50 p-4 rounded-xl space-y-3">
+                            <label className="text-[10px] font-black uppercase text-red-600 tracking-wider flex items-center gap-2"><Icon name="fa-solid fa-gears" /> Pengaturan Poin Klasemen</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block mb-1">Menang</label>
+                                    <input type="number" value={pts.win} onChange={e => setPts({...pts, win: e.target.value})} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-slate-200" />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block mb-1">Seri</label>
+                                    <input type="number" value={pts.draw} onChange={e => setPts({...pts, draw: e.target.value})} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-slate-200" />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block mb-1">Kalah</label>
+                                    <input type="number" value={pts.loss} onChange={e => setPts({...pts, loss: e.target.value})} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-slate-200" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
+                                <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block mb-1">Menang PK</label>
+                                    <input type="number" value={pts.winPk} onChange={e => setPts({...pts, winPk: e.target.value})} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-slate-200" />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block mb-1">Kalah PK</label>
+                                    <input type="number" value={pts.lossPk} onChange={e => setPts({...pts, lossPk: e.target.value})} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-slate-200" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onClick={saveLeague} className={`w-full py-3.5 text-white rounded-xl font-bold uppercase text-xs tracking-wider shadow-lg transition-transform hover:scale-[1.01] ${editId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-red-600 hover:bg-red-700'}`}>{editId ? 'Perbarui Turnamen' : 'Daftarkan Turnamen'}</button>
+                    </div>
+
+                    <div className="space-y-3">
+                        {leagues.map(l => (
+                            <div key={l.id} className="bg-white p-5 rounded-2xl border border-slate-100 flex items-center justify-between group hover:shadow-md transition-all animate-pop">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
+                                        {l.logo ? <img src={l.logo} className="w-full h-full object-cover" alt={l.name} /> : <Icon name="fa-solid fa-trophy" className="text-slate-300" size={16} />}
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold uppercase text-xs leading-none">{l.name}</h4>
+                                        <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">{l.type === 'league' ? `${l.groups?.length || 0} Grup` : 'Knockout System'} • Poin ({l.points?.win || 3}/{l.points?.draw || 1}/{l.points?.loss || 0})</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-1">
+                                    <button onClick={() => triggerEdit(l)} className="p-2 text-slate-300 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"><Icon name="fa-solid fa-pen" size={12} /></button>
+                                    <button onClick={() => showConfirm('Hapus Turnamen?', `Yakin ingin menghapus ${l.name}? Semua data klub, jadwal, dan pemain di dalamnya akan dihapus secara permanen.`, () => setLeagues(leagues.filter(x => x.id !== l.id)))} className="p-2 text-slate-300 hover:text-red-500 hover:bg-rose-50 rounded-lg transition-colors"><Icon name="fa-solid fa-trash-can" size={12} /></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminView = ({ teams, setTeams, players, setPlayers, leagueId, currentLeague, showConfirm }) => {
+            const [tName, setTName] = React.useState('');
+            const [tLogo, setTLogo] = React.useState(null);
+            const [selectedGroup, setSelectedGroup] = React.useState(currentLeague?.groups?.[0] || 'Grup A');
+            const [activeTeamId, setActiveTeamId] = React.useState(null);
+
+            const [pName, setPName] = React.useState('');
+            const [pNo, setPNo] = React.useState('');
+            const [pPos, setPPos] = React.useState('');
+            const [pPhoto, setPPhoto] = React.useState(null);
+
+            const [editTeamId, setEditTeamId] = React.useState(null);
+            const [editPlayerId, setEditPlayerId] = React.useState(null);
+
+            const teamFileRef = React.useRef(null);
+            const playerFileRef = React.useRef(null);
+
+            React.useEffect(() => {
+                if (currentLeague?.groups?.length > 0) {
+                    setSelectedGroup(currentLeague.groups[0]);
+                }
+            }, [currentLeague]);
+
+            const handleTeamLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setTLogo(reader.result);
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handlePlayerPhotoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setPPhoto(reader.result);
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const saveTeam = () => {
+                if (!tName.trim()) return;
+                const newTeam = {
+                    id: editTeamId || Date.now().toString(),
+                    name: tName, logo: tLogo, groupName: selectedGroup, leagueId
+                };
+
+                if (editTeamId) {
+                    setTeams(teams.map(t => t.id === editTeamId ? newTeam : t));
+                    setEditTeamId(null);
+                } else {
+                    setTeams([...teams, newTeam]);
+                }
+
+                setTName('');
+                setTLogo(null);
+            };
+
+            const savePlayer = () => {
+                if (!pName.trim() || !activeTeamId) return;
+                const newPlayer = {
+                    id: editPlayerId || Date.now().toString(),
+                    name: pName, no: pNo, pos: pPos, photo: pPhoto, teamId: activeTeamId
+                };
+
+                if (editPlayerId) {
+                    setPlayers(players.map(p => p.id === editPlayerId ? newPlayer : p));
+                    setEditPlayerId(null);
+                } else {
+                    setPlayers([...players, newPlayer]);
+                }
+
+                setPName('');
+                setPNo('');
+                setPPos('');
+                setPPhoto(null);
+            };
+
+            const triggerEditTeam = (e, t) => {
+                e.stopPropagation();
+                setEditTeamId(t.id);
+                setTName(t.name);
+                setTLogo(t.logo);
+                setSelectedGroup(t.groupName);
+            };
+
+            const triggerEditPlayer = (p) => {
+                setEditPlayerId(p.id);
+                setPName(p.name);
+                setPNo(p.no);
+                setPPos(p.pos);
+                setPPhoto(p.photo);
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    <div className="space-y-4">
+                        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 animate-pop">
+                            <h3 className="text-xs font-black text-red-600 uppercase tracking-widest">{editTeamId ? 'Ubah Informasi Tim' : 'Registrasi Tim Peserta'}</h3>
+                            <div className="flex items-center gap-4">
+                                <div onClick={() => teamFileRef.current.click()} className="w-14 h-14 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative group">
+                                    {tLogo ? <img src={tLogo} className="w-full h-full object-cover" alt="Team Logo" /> : <Icon name="fa-solid fa-camera" className="text-slate-300" size={16} />}
+                                    <input type="file" ref={teamFileRef} hidden onChange={handleTeamLogoUpload} accept="image/*" />
+                                </div>
+                                <input value={tName} onChange={e => setTName(e.target.value)} placeholder="Nama Klub..." className="flex-1 bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                            </div>
+
+                            {currentLeague?.type === 'league' && (
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase text-slate-400">Penempatan Grup</label>
+                                    <select value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)} className="w-full bg-slate-50 rounded-xl px-3 py-3 text-xs font-bold border-none outline-none ring-1 ring-slate-100">
+                                        {currentLeague?.groups?.map(g => <option key={g} value={g}>{g}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            <button onClick={saveTeam} className={`w-full py-3 rounded-xl text-white font-bold text-xs uppercase shadow-md hover:opacity-90 transition-all ${editTeamId ? 'bg-amber-500' : 'bg-[#4c0519]'}`}>{editTeamId ? 'Perbarui Tim' : 'Tambah Tim'}</button>
+                        </div>
+
+                        <div className="space-y-2">
+                            {teams.filter(t => t.leagueId === leagueId).map(t => (
+                                <div key={t.id} onClick={() => { setActiveTeamId(t.id); setEditPlayerId(null); }} className={`p-4 rounded-xl border cursor-pointer flex items-center justify-between transition-all animate-pop ${activeTeamId === t.id ? 'bg-[#4c0519] text-white shadow-lg scale-[1.01]' : 'bg-white hover:border-red-100'}`}>
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-slate-100 border border-slate-200/60 rounded-lg overflow-hidden flex items-center justify-center">
+                                            {t.logo ? <img src={t.logo} className="w-full h-full object-cover" alt="Team Logo" /> : <Icon name="fa-solid fa-shield-halved" className="text-slate-300" size={16} />}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold uppercase text-xs block">{t.name}</span>
+                                            {currentLeague?.type === 'league' && <span className={`text-[8px] font-bold uppercase ${activeTeamId === t.id ? 'text-red-300' : 'text-red-500'}`}>{t.groupName}</span>}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button onClick={(e) => triggerEditTeam(e, t)} className={`p-1.5 rounded-lg transition-colors ${activeTeamId === t.id ? 'text-white/60 hover:text-white' : 'text-slate-400 hover:text-amber-500'}`}><Icon name="fa-solid fa-pen" size={10} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); showConfirm('Hapus Klub?', `Yakin ingin menghapus klub ${t.name}? Seluruh statistik pemain dan sejarah pertandingannya akan terhapus.`, () => { setTeams(teams.filter(x => x.id !== t.id)); if (activeTeamId === t.id) setActiveTeamId(null); }); }} className={`p-1.5 rounded-lg transition-colors ${activeTeamId === t.id ? 'text-white/20 hover:text-white' : 'text-slate-400 hover:text-red-500'}`}><Icon name="fa-solid fa-trash-can" size={10} /></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="sticky top-20">
+                        {activeTeamId ? (
+                            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-5 animate-pop">
+                                <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                                    <h4 className="text-xs font-black uppercase text-slate-800">Skuad Tim - {teams.find(t => t.id === activeTeamId)?.name}</h4>
+                                    <button onClick={() => { setActiveTeamId(null); setEditPlayerId(null); }} className="text-slate-300 hover:text-red-500"><Icon name="fa-solid fa-xmark" size={14} /></button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-4">
+                                        <div onClick={() => playerFileRef.current.click()} className="w-14 h-14 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative group">
+                                            {pPhoto ? <img src={pPhoto} className="w-full h-full object-cover" alt="Player" /> : <Icon name="fa-solid fa-user" className="text-slate-300" size={16} />}
+                                            <input type="file" ref={playerFileRef} hidden onChange={handlePlayerPhotoUpload} accept="image/*" />
+                                        </div>
+                                        <div className="flex-1 space-y-2">
+                                            <input value={pName} onChange={e => setPName(e.target.value)} placeholder="Nama Pemain..." className="w-full bg-slate-50 rounded-xl px-3 py-2.5 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input value={pNo} onChange={e => setPNo(e.target.value)} placeholder="No. Punggung..." className="w-full bg-slate-50 rounded-xl px-3 py-2.5 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                                        <input value={pPos} onChange={e => setPPos(e.target.value)} placeholder="Posisi (Striker, dll)..." className="w-full bg-slate-50 rounded-xl px-3 py-2.5 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                                    </div>
+
+                                    <button onClick={savePlayer} className={`w-full py-3 rounded-xl text-white font-bold text-xs uppercase shadow-md transition-all hover:opacity-95 ${editPlayerId ? 'bg-amber-500' : 'bg-red-600'}`}>{editPlayerId ? 'Perbarui Pemain' : 'Daftarkan Pemain'}</button>
+                                </div>
+
+                                <div className="max-h-[250px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                    {players.filter(p => p.teamId === activeTeamId).map(p => (
+                                        <div key={p.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl hover:bg-slate-100/50 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 overflow-hidden flex items-center justify-center">
+                                                    {p.photo ? <img src={p.photo} className="w-full h-full object-cover" alt={p.name} /> : <Icon name="fa-solid fa-user" className="text-slate-300" size={12} />}
+                                                </div>
+                                                <div>
+                                                    <span className="font-black text-xs text-red-600">#{p.no}</span>
+                                                    <span className="ml-2 font-bold text-xs uppercase">{p.name}</span>
+                                                    <span className="ml-2 text-[9px] font-bold text-slate-400">({p.pos || 'Posisi Bebas'})</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => triggerEditPlayer(p)} className="p-1.5 text-slate-300 hover:text-amber-500"><Icon name="fa-solid fa-pen" size={10} /></button>
+                                                <button onClick={() => showConfirm('Hapus Pemain?', `Hapus ${p.name} dari tim secara permanen?`, () => setPlayers(players.filter(x => x.id !== p.id)))} className="p-1.5 text-slate-300 hover:text-red-500"><Icon name="fa-solid fa-trash-can" size={10} /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {players.filter(p => p.teamId === activeTeamId).length === 0 && (
+                                        <p className="text-center text-[10px] text-slate-400 py-6 font-bold uppercase">Belum ada pemain di skuad ini</p>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-[350px] flex flex-col items-center justify-center bg-white border-2 border-dashed border-slate-100 rounded-2xl text-slate-300">
+                                <Icon name="fa-solid fa-users" className="opacity-15 mb-4" size={32} />
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center px-8">Pilih Tim di samping untuk Mengelola Skuad</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const JadwalView = ({ teams, players, matches, setMatches, leagueId, currentLeague, hasWriteAuthority }) => {
+            const [isAdding, setIsAdding] = React.useState(false);
+            const [form, setForm] = React.useState({ homeId: '', awayId: '', date: '', time: '', round: '' });
+            const [recorderMatch, setRecorderMatch] = React.useState(null);
+
+            const [sh, setSh] = React.useState(0);
+            const [sa, setSa] = React.useState(0);
+            const [scorers, setScorers] = React.useState([]);
+            const [isPk, setIsPk] = React.useState(false);
+            const [pkHome, setPkHome] = React.useState('');
+            const [pkAway, setPkAway] = React.useState('');
+
+            const [editMatchId, setEditMatchId] = React.useState(null);
+
+            React.useEffect(() => {
+                if (sh !== sa) {
+                    setIsPk(false);
+                    setPkHome('');
+                    setPkAway('');
+                }
+            }, [sh, sa]);
+
+            const rounds = currentLeague?.type === 'league' 
+                ? ['Pekan 1', 'Pekan 2', 'Pekan 3', 'Pekan 4'] 
+                : ['Penyisihan', 'Perempat Final', 'Semi Final', 'Final'];
+
+            const saveMatch = () => {
+                if (!form.homeId || !form.awayId || form.homeId === form.awayId) return;
+                const newMatch = {
+                    id: editMatchId || Date.now().toString(),
+                    ...form, leagueId, scoreHome: 0, scoreAway: 0, isFinished: false, isPk: false, scorers: []
+                };
+
+                if (editMatchId) {
+                    setMatches(matches.map(m => m.id === editMatchId ? { ...m, ...form } : m));
+                    setEditMatchId(null);
+                } else {
+                    setMatches([...matches, newMatch]);
+                }
+
+                setIsAdding(false);
+                setForm({ homeId: '', awayId: '', date: '', time: '', round: '' });
+            };
+
+            const triggerEditMatch = (m) => {
+                setEditMatchId(m.id);
+                setForm({ homeId: m.homeId, awayId: m.awayId, date: m.date, time: m.time, round: m.round });
+                setIsAdding(true);
+            };
+
+            const openRecorder = (m) => {
+                setRecorderMatch(m);
+                setSh(Number(m.scoreHome) || 0);
+                setSa(Number(m.scoreAway) || 0);
+                setScorers(m.scorers || []);
+                setIsPk(m.isPk || false);
+                setPkHome(m.pkHome || '');
+                setPkAway(m.pkAway || '');
+            };
+
+            const addGoal = (player, teamId) => {
+                const goalId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                setScorers([...scorers, { id: goalId, playerId: player.id, name: player.name, teamId }]);
+                if (teamId === recorderMatch.homeId) setSh(sh + 1);
+                else setSa(sa + 1);
+            };
+
+            const removeGoal = (gid) => {
+                const gObj = scorers.find(g => g.id === gid);
+                if (!gObj) return;
+                if (gObj.teamId === recorderMatch.homeId) setSh(Math.max(0, sh - 1));
+                else setSa(Math.max(0, sa - 1));
+                setScorers(scorers.filter(g => g.id !== gid));
+            };
+
+            const saveRecorderResult = () => {
+                setMatches(matches.map(m => m.id === recorderMatch.id ? {
+                    ...m,
+                    scoreHome: sh,
+                    scoreAway: sa,
+                    scorers,
+                    isFinished: true,
+                    isPk,
+                    pkHome: isPk ? pkHome : '',
+                    pkAway: isPk ? pkAway : ''
+                } : m));
+                setRecorderMatch(null);
+            };
+
+            return (
+                <div className="space-y-6">
+                    {hasWriteAuthority && (
+                        <button onClick={() => { setIsAdding(!isAdding); setEditMatchId(null); }} className="w-full py-4 bg-[#4c0519] text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-3 transition-all hover:opacity-95 animate-pop">
+                            <Icon name={isAdding ? 'fa-solid fa-xmark' : 'fa-solid fa-plus'} /> 
+                            {isAdding ? 'Batal Tambah' : 'Tambah Jadwal Baru'}
+                        </button>
+                    )}
+
+                    {isAdding && hasWriteAuthority && (
+                        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-md grid grid-cols-1 md:grid-cols-2 gap-4 animate-pop">
+                            <select value={form.round} onChange={e => setForm({...form, round: e.target.value})} className="bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none">
+                                <option value="">Pilih Babak / Pekan</option>
+                                {rounds.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                            <div className="flex gap-2">
+                                <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="flex-1 bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none" />
+                                <input type="time" value={form.time} onChange={e => setForm({...form, time: e.target.value})} className="w-24 bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none" />
+                            </div>
+                            <select value={form.homeId} onChange={e => setForm({...form, homeId: e.target.value})} className="bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none">
+                                <option value="">Tim Kandang (Home)</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.name} ({t.groupName})</option>)}
+                            </select>
+                            <select value={form.awayId} onChange={e => setForm({...form, awayId: e.target.value})} className="bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none">
+                                <option value="">Tim Tandang (Away)</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.name} ({t.groupName})</option>)}
+                            </select>
+                            <button onClick={saveMatch} className="md:col-span-2 bg-red-600 text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-md hover:bg-red-700 transition-colors">{editMatchId ? 'Perbarui Jadwal' : 'Simpan Jadwal'}</button>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {matches.filter(m => m.leagueId === leagueId).map(m => {
+                            const home = teams.find(t => t.id === m.homeId);
+                            const away = teams.find(t => t.id === m.awayId);
+                            return (
+                                <div key={m.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 animate-pop">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[8px] font-black text-red-600 bg-red-50 px-2.5 py-1 rounded-full uppercase tracking-widest">{m.round} {home?.groupName && `• ${home.groupName}`}</span>
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">{m.date} | {m.time}</span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex-1 text-center space-y-2">
+                                            <div className="w-10 h-10 bg-slate-50 border border-slate-200/50 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
+                                                {home?.logo ? <img src={home.logo} className="w-full h-full object-cover" alt="Home Team" /> : <Icon name="fa-solid fa-shield-halved" className="text-slate-200" />}
+                                            </div>
+                                            <p className="text-[10px] font-black uppercase tracking-tight truncate">{home?.name || 'Klub dihapus'}</p>
+                                        </div>
+
+                                        <div className="px-3 text-center">
+                                            <div className="bg-[#4c0519] text-white px-5 py-2 rounded-xl font-black text-lg flex items-center gap-3 shadow-md">
+                                                <span>{m.isFinished ? m.scoreHome : '-'}</span>
+                                                <span className="text-red-500/50">:</span>
+                                                <span>{m.isFinished ? m.scoreAway : '-'}</span>
+                                            </div>
+                                            {m.isFinished && m.isPk && (
+                                                <span className="text-[8px] font-black text-rose-600 uppercase block mt-1 animate-pulse">Adu PK: {m.pkHome} - {m.pkAway}</span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 text-center space-y-2">
+                                            <div className="w-10 h-10 bg-slate-50 border border-slate-200/50 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
+                                                {away?.logo ? <img src={away.logo} className="w-full h-full object-cover" alt="Away Team" /> : <Icon name="fa-solid fa-shield-halved" className="text-slate-200" />}
+                                            </div>
+                                            <p className="text-[10px] font-black uppercase tracking-tight truncate">{away?.name || 'Klub dihapus'}</p>
+                                        </div>
+                                    </div>
+
+                                    {m.scorers && m.scorers.length > 0 && (
+                                        <div className="bg-slate-50 p-2.5 rounded-xl flex flex-wrap gap-1.5 justify-center">
+                                            {m.scorers.map(s => (
+                                                <span key={s.id} className="text-[8px] font-bold bg-white border border-slate-200/50 px-2 py-0.5 rounded-md flex items-center gap-1 animate-pop">
+                                                    <Icon name="fa-solid fa-futbol text-red-500" /> {s.name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {hasWriteAuthority && (
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <button onClick={() => triggerEditMatch(m)} className="py-2 bg-slate-50 rounded-lg text-[9px] font-bold uppercase text-slate-400 hover:text-amber-500 hover:bg-amber-50 flex items-center justify-center gap-1 transition-all"><Icon name="fa-solid fa-pen" /> Edit Laga</button>
+                                            <button onClick={() => openRecorder(m)} className="col-span-2 py-2 bg-[#4c0519] hover:bg-[#3b0413] text-white rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-sm transition-colors"><Icon name="fa-solid fa-stopwatch" /> Recorder Pro</button>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                        {matches.filter(m => m.leagueId === leagueId).length === 0 && (
+                            <p className="md:col-span-2 text-center text-xs text-slate-400 uppercase py-10 font-bold">Belum ada jadwal pertandingan terdaftar.</p>
+                        )}
+                    </div>
+
+                    {recorderMatch && hasWriteAuthority && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-pop">
+                            <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+                                <div className="p-5 bg-[#4c0519] text-white flex items-center justify-between">
+                                    <h4 className="font-black uppercase tracking-wider text-xs">Just Mind - Pro Match Recorder</h4>
+                                    <button onClick={() => setRecorderMatch(null)} className="p-2 hover:bg-white/10 rounded-lg"><Icon name="fa-solid fa-xmark" /></button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                                    <div className="flex items-center justify-center gap-6">
+                                        <div className="text-center">
+                                            <p className="font-bold text-xs uppercase mb-1 text-slate-400">{teams.find(t => t.id === recorderMatch.homeId)?.name}</p>
+                                            <input type="number" value={sh} onChange={e => setSh(Number(e.target.value))} className="w-16 h-16 bg-slate-50 rounded-xl text-center font-black text-2xl ring-1 ring-slate-100 outline-none" />
+                                        </div>
+                                        <span className="font-bold text-lg text-slate-300">-</span>
+                                        <div className="text-center">
+                                            <p className="font-bold text-xs uppercase mb-1 text-slate-400">{teams.find(t => t.id === recorderMatch.awayId)?.name}</p>
+                                            <input type="number" value={sa} onChange={e => setSa(Number(e.target.value))} className="w-16 h-16 bg-slate-50 rounded-xl text-center font-black text-2xl ring-1 ring-slate-100 outline-none" />
+                                        </div>
+                                    </div>
+
+                                    {sh === sa && (
+                                        <div className="bg-rose-50/60 border border-rose-100 p-4 rounded-xl space-y-3 animate-pulse">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex flex-col">
+                                                    <label className="text-[10px] font-black uppercase text-rose-800 flex items-center gap-1.5 cursor-pointer select-none">
+                                                        <Icon name="fa-solid fa-circle-exclamation text-rose-600" /> Laga Berakhir Seri! Aktifkan Adu Penalti?
+                                                    </label>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Untuk pembagian poin pemenang PK sesuai aturan liga</span>
+                                                </div>
+                                                <input type="checkbox" checked={isPk} onChange={e => setIsPk(e.target.checked)} className="w-4 h-4 rounded text-red-600 focus:ring-red-500 border-rose-300 accent-red-600 cursor-pointer" />
+                                            </div>
+                                            {isPk && (
+                                                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-rose-100 animate-pop">
+                                                    <div>
+                                                        <label className="text-[8px] font-bold text-rose-700 block mb-1">Skor Penalti {teams.find(t => t.id === recorderMatch.homeId)?.name}</label>
+                                                        <input type="number" value={pkHome} onChange={e => setPkHome(e.target.value)} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-rose-200 focus:ring-red-500 outline-none" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[8px] font-bold text-rose-700 block mb-1">Skor Penalti {teams.find(t => t.id === recorderMatch.awayId)?.name}</label>
+                                                        <input type="number" value={pkAway} onChange={e => setPkAway(e.target.value)} className="w-full bg-white rounded-lg px-2 py-1.5 text-center font-bold text-xs ring-1 ring-rose-200 focus:ring-red-500 outline-none" />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <p className="text-[9px] font-black text-red-600 uppercase tracking-widest border-l-2 border-red-600 pl-2">Skuad {teams.find(t => t.id === recorderMatch.homeId)?.name}</p>
+                                            <div className="max-h-[150px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                                                {players.filter(p => p.teamId === recorderMatch.homeId).map(p => (
+                                                    <button key={p.id} onClick={() => addGoal(p, recorderMatch.homeId)} className="w-full p-2.5 bg-slate-50 rounded-lg text-left text-xs font-bold uppercase flex justify-between items-center hover:bg-red-50 hover:text-red-700 transition-all">
+                                                        <span>#{p.no} - {p.name}</span>
+                                                        <Icon name="fa-solid fa-plus text-slate-300" />
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest border-l-2 border-blue-600 pl-2">Skuad {teams.find(t => t.id === recorderMatch.awayId)?.name}</p>
+                                            <div className="max-h-[150px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                                                {players.filter(p => p.teamId === recorderMatch.awayId).map(p => (
+                                                    <button key={p.id} onClick={() => addGoal(p, recorderMatch.awayId)} className="w-full p-2.5 bg-slate-50 rounded-lg text-left text-xs font-bold uppercase flex justify-between items-center hover:bg-blue-50 hover:text-blue-700 transition-all">
+                                                        <span>#{p.no} - {p.name}</span>
+                                                        <Icon name="fa-solid fa-plus text-slate-300" />
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-50 p-4 rounded-xl space-y-2">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider"><Icon name="fa-solid fa-futbol" /> Daftar Gol Masuk</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {scorers.map(g => (
+                                                <span key={g.id} className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-2 animate-pop">
+                                                    <span className={`w-2 h-2 rounded-full ${g.teamId === recorderMatch.homeId ? 'bg-red-500' : 'bg-blue-500'}`} />
+                                                    {g.name}
+                                                    <button onClick={() => removeGoal(g.id)}><Icon name="fa-solid fa-xmark text-red-500 ml-1" /></button>
+                                                </span>
+                                            ))}
+                                            {scorers.length === 0 && (
+                                                <p className="text-[9px] text-slate-300 font-bold uppercase py-2">Belum ada gol terdaftar</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+                                    <button onClick={() => setRecorderMatch(null)} className="flex-1 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold uppercase text-slate-500 transition-colors hover:bg-slate-100">Batal</button>
+                                    <button onClick={saveRecorderResult} className="flex-2 py-3 bg-[#4c0519] text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md transition-colors hover:bg-[#3b0413]">Simpan Hasil Laga</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const StandingsOrBracketView = ({ currentLeague, standingsByGroup, matches, teams }) => {
+            if (currentLeague?.type === 'league') {
+                return (
+                    <div className="space-y-8 animate-pop">
+                        {Object.entries(standingsByGroup).map(([groupName, groupTeams]) => (
+                            <div key={groupName} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="bg-[#4c0519] px-6 py-4 flex items-center justify-between">
+                                    <h3 className="text-white font-black uppercase tracking-wider text-xs flex items-center gap-2">
+                                        <Icon name="fa-solid fa-list-ol text-amber-500" /> Klasemen {groupName}
+                                    </h3>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs min-w-[600px]">
+                                        <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                            <tr>
+                                                <th className="p-4 w-12 text-center">Pos</th>
+                                                <th className="p-4">Klub</th>
+                                                <th className="p-4 text-center">Main</th>
+                                                <th className="p-4 text-center">M</th>
+                                                <th className="p-4 text-center">S</th>
+                                                <th className="p-4 text-center">K</th>
+                                                <th className="p-4 text-center">SG</th>
+                                                <th className="p-4 text-center w-20">Pts</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 font-semibold">
+                                            {groupTeams.map((team, idx) => (
+                                                <tr key={team.id} className="hover:bg-slate-50/50 transition-colors">
+                                                    <td className="p-4 text-center font-black text-slate-300">{idx + 1}</td>
+                                                    <td className="p-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-lg bg-slate-50 overflow-hidden border border-slate-100 flex items-center justify-center">
+                                                                {team.logo ? <img src={team.logo} className="w-full h-full object-cover" alt={team.name} /> : <Icon name="fa-solid fa-shield-halved" className="text-slate-200" />}
+                                                            </div>
+                                                            <span className="font-bold text-xs uppercase tracking-wide">{team.name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 text-center text-slate-500">{team.played}</td>
+                                                    <td className="p-4 text-center text-emerald-600">{team.win}</td>
+                                                    <td className="p-4 text-center text-slate-400">{team.draw}</td>
+                                                    <td className="p-4 text-center text-rose-500">{team.loss}</td>
+                                                    <td className="p-4 text-center text-slate-400">{team.gf - team.ga}</td>
+                                                    <td className="p-4 text-center font-black text-red-600 text-sm bg-red-50/20">{team.pts}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
+
+            const rounds = ['Penyisihan', 'Perempat Final', 'Semi Final', 'Final'];
+            return (
+                <div className="overflow-x-auto pb-4 custom-scrollbar">
+                    <div className="flex gap-8 min-w-[800px] p-2 animate-pop">
+                        {rounds.map(round => {
+                            const roundMatches = matches.filter(m => m.round === round);
+                            return (
+                                <div key={round} className="w-72 space-y-6">
+                                    <div className="text-center">
+                                        <span className="text-[10px] font-black uppercase bg-[#4c0519] text-white px-5 py-2 rounded-xl shadow-md tracking-wider">{round}</span>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {roundMatches.map(m => {
+                                            const h = teams.find(t => t.id === m.homeId);
+                                            const a = teams.find(t => t.id === m.awayId);
+                                            return (
+                                                <div key={m.id} className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow animate-pop">
+                                                    <div className="p-3 flex justify-between items-center border-b border-slate-50/60">
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            {h?.logo ? <img src={h.logo} className="w-5 h-5 rounded-md object-cover" alt="" /> : <Icon name="fa-solid fa-shield-halved" className="text-slate-200" size={10} />}
+                                                            <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{h?.name || 'TBD'}</span>
+                                                        </div>
+                                                        <span className="font-black text-xs text-slate-600">{m.isFinished ? m.scoreHome : '-'}</span>
+                                                    </div>
+                                                    <div className="p-3 flex justify-between items-center">
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            {a?.logo ? <img src={a.logo} className="w-5 h-5 rounded-md object-cover" alt="" /> : <Icon name="fa-solid fa-shield-halved" className="text-slate-200" size={10} />}
+                                                            <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{a?.name || 'TBD'}</span>
+                                                        </div>
+                                                        <span className="font-black text-xs text-slate-600">{m.isFinished ? m.scoreAway : '-'}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const GoogleSheetSyncView = ({ gasUrl, setGasUrl, pullFromCloud, pushToCloud, isSyncing, syncStatus }) => {
+            const [urlInput, setUrlInput] = React.useState(gasUrl);
+
+            const handleSaveUrl = () => {
+                setGasUrl(urlInput.trim());
+            };
+
+            return (
+                <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-2xl border border-slate-100 shadow-sm space-y-6 animate-pop">
+                    <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <Icon name="fa-solid fa-file-excel" size={24} />
+                        </div>
+                        <div>
+                            <h3 className="font-extrabold text-lg">Integrasi Google Sheets</h3>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Gunakan spreadsheet eksternal sebagai basis data awan utama</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black uppercase text-slate-400">Google Apps Script Web App URL</label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    value={urlInput} 
+                                    onChange={e => setUrlInput(e.target.value)}
+                                    placeholder="https://script.google.com/macros/s/.../exec" 
+                                    className="flex-1 bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-emerald-500 outline-none"
+                                />
+                                <button 
+                                    onClick={handleSaveUrl}
+                                    className="px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-colors"
+                                >
+                                    Hubungkan
+                                </button>
+                            </div>
+                        </div>
+
+                        {gasUrl && (
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Sinkronisasi</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'synced' ? 'bg-emerald-500' : syncStatus === 'connecting' ? 'bg-amber-500 sync-pulse' : 'bg-rose-500'}`}></span>
+                                        <span className="text-xs font-black uppercase">{syncStatus === 'synced' ? 'Terhubung' : syncStatus === 'connecting' ? 'Menghubungkan' : 'Gagal terhubung'}</span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 pt-2">
+                                    <button 
+                                        onClick={() => pullFromCloud()} 
+                                        disabled={isSyncing}
+                                        className="py-3 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 shadow-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                    >
+                                        <Icon name="fa-solid fa-cloud-arrow-down" /> Unduh (Pull)
+                                    </button>
+                                    <button 
+                                        onClick={pushToCloud} 
+                                        disabled={isSyncing}
+                                        className="py-3 bg-[#4c0519] hover:bg-[#3b0413] text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                    >
+                                        <Icon name="fa-solid fa-cloud-arrow-up" /> Unggah (Push)
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/50 text-emerald-800 text-xs font-medium space-y-2">
+                            <p className="font-extrabold uppercase tracking-wide text-[10px]"><Icon name="fa-solid fa-lightbulb" /> Petunjuk Ringkas:</p>
+                            <ul className="list-decimal pl-4 space-y-1 text-[11px] font-semibold">
+                                <li>Pastikan Anda telah menyalin dan menempelkan skrip <b>Code.gs</b> di dalam Ekstensi Google Apps Script dari spreadsheet Google Sheets Anda.</li>
+                                <li>Terapkan/Deploy skrip sebagai <b>Aplikasi Web (Web App)</b>.</li>
+                                <li>Setel hak akses yang dapat mengakses menjadi <b>"Siapa Saja" / "Anyone"</b>.</li>
+                                <li>Tempel tautan eksekusi yang berakhiran <b>/exec</b> ke kolom di atas.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ManageAdminsView = ({ admins, setAdmins, showConfirm, showAlert }) => {
+            const [name, setName] = React.useState('');
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+
+            const registerAdmin = () => {
+                if (!name.trim() || !email.trim() || !password.trim()) {
+                    showAlert('Lengkapi Formulir', 'Seluruh kolom input wajib diisi secara lengkap.', 'error');
+                    return;
+                }
+                const newAdmin = {
+                    id: Date.now().toString(),
+                    name, email: email.toLowerCase(), password, role: 'admin'
+                };
+                setAdmins([...admins, newAdmin]);
+                setName(''); setEmail(''); setPassword('');
+                showAlert('Registrasi Berhasil', `Admin dengan nama ${name} berhasil didaftarkan.`, 'success');
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start animate-pop">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                        <h3 className="text-xs font-black text-red-600 uppercase tracking-widest flex items-center gap-2"><Icon name="fa-solid fa-user-plus" /> Registrasi Akun Admin Baru</h3>
+                        <div className="space-y-3">
+                            <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama Lengkap Admin..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Alamat Email Admin..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi (Password)..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 focus:ring-red-500 outline-none" />
+                        </div>
+                        <button onClick={registerAdmin} className="w-full py-3.5 bg-[#4c0519] hover:bg-[#3b0413] text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-md transition-all">Daftarkan Admin</button>
+                    </div>
+
+                    <div className="space-y-3">
+                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2"><Icon name="fa-solid fa-users" /> Daftar Admin Aktif ({admins.length})</h3>
+                        {admins.map(admin => (
+                            <div key={admin.id} className="bg-white p-4 rounded-xl border border-slate-100 flex items-center justify-between animate-pop">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-800 flex items-center justify-center font-black text-xs">{admin.name.charAt(0).toUpperCase()}</div>
+                                    <div>
+                                        <p className="font-extrabold text-xs uppercase text-slate-800">{admin.name}</p>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">{admin.email} • Pass: {admin.password}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => showConfirm('Cabut Akses Admin?', `Yakin ingin menghapus hak akses Admin ${admin.name}?`, () => setAdmins(admins.filter(a => a.id !== admin.id)))} className="p-2 text-slate-300 hover:text-red-500 hover:bg-rose-50 rounded-lg transition-colors"><Icon name="fa-solid fa-user-minus" size={12} /></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const AuthView = ({ currentUser, setCurrentUser, admins, showAlert, setActiveTab }) => {
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                const checkEmail = email.toLowerCase().trim();
+                const checkPass = password.trim();
+
+                if (checkEmail === 'owner@justmind.com' && checkPass === 'owner123') {
+                    setCurrentUser({ name: 'Super Owner', email: 'owner@justmind.com', role: 'owner' });
+                    showAlert('Sesi Login Berhasil', 'Masuk sebagai Super Owner.', 'success');
+                    setActiveTab('dashboard');
+                    return;
+                }
+
+                const matchedAdmin = admins.find(a => a.email.toLowerCase() === checkEmail && a.password === checkPass);
+                if (matchedAdmin) {
+                    setCurrentUser({ name: matchedAdmin.name, email: matchedAdmin.email, role: 'admin' });
+                    showAlert('Sesi Login Berhasil', `Selamat datang kembali, Admin ${matchedAdmin.name}.`, 'success');
+                    setActiveTab('dashboard');
+                    return;
+                }
+
+                showAlert('Autentikasi Gagal', 'Email atau password salah.', 'error');
+            };
+
+            return (
+                <div className="max-w-md mx-auto bg-white p-8 rounded-2xl border border-slate-100 shadow-sm space-y-6 animate-pop">
+                    {currentUser ? (
+                        <div className="text-center space-y-6">
+                            <div className="w-16 h-16 bg-rose-50 text-rose-800 rounded-full flex items-center justify-center mx-auto text-xl">
+                                <Icon name={currentUser.role === 'owner' ? 'fa-solid fa-crown' : 'fa-solid fa-user-shield'} />
+                            </div>
+                            <div>
+                                <h3 className="font-black text-lg uppercase text-slate-800">{currentUser.name}</h3>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{currentUser.email}</p>
+                            </div>
+                            <button onClick={() => setCurrentUser(null)} className="w-full py-3 bg-red-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md">Keluar Akun</button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <div className="text-center">
+                                <h3 className="font-black text-lg uppercase text-slate-800">Masuk Konsol Admin</h3>
+                            </div>
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Alamat Email..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none" />
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi..." className="w-full bg-slate-50 rounded-xl px-4 py-3 font-bold text-xs border-none ring-1 ring-slate-100 outline-none" />
+                            <button type="submit" className="w-full py-3.5 bg-[#4c0519] text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg">Verifikasi & Masuk</button>
+                        </form>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
